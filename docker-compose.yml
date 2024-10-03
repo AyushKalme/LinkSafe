@@ -1,0 +1,10 @@
+version: '3'
+services:
+  app:
+    build: .
+    volumes:
+      - ./static/screenshots:/app/static/screenshots  # Mount the screenshots folder
+    ports:
+      - "5000:5000"
+    environment:
+      - DISPLAY=:99  # For Xvfb virtual display

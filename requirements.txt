@@ -1,0 +1,7 @@
+numpy
+requests
+Flask
+pandas
+scikit-learn
+joblib
+Selenium-Screenshot

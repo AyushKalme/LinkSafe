@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkSafe - URL Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            text-align: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input[type="text"], button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>LinkSafe - Invalid URL Detection</h1>
+
+    <div class="container">
+        <form id="urlForm">
+            <label for="url">Enter a URL to check:</label>
+            <input type="text" id="url" name="url" placeholder="Enter URL..." required>
+            <button type="submit">Check URL</button>
+        </form>
+
+        <div id="result"></div>
+        <img id="screenshot" src="" alt="Screenshot will appear here" style="display: none; width: 400px; height: auto;">
+    </div>
+
+    <script>
+
+        const form = document.getElementById('urlForm');
+        const resultDiv = document.getElementById('result');
+        const screenshotImg = document.getElementById('screenshot');
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const url = document.getElementById('url').value;
+
+            // Send the URL to Flask backend
+            const response = await fetch('/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url: url })
+            });
+
+            const result = await response.json();
+
+            // Display the result
+            if (response.ok) {
+                resultDiv.innerHTML = `<strong>Result:</strong> ${result.result} <br> <strong>Scammy Probability:</strong> ${result.scammy_probability.toFixed(2)}`;
+                
+                if (result.result === 'Scammy' && result.screenshot_path) {
+                    screenshotImg.src = result.screenshot_path;  // Set the screenshot image source
+                    screenshotImg.style.display = 'block';  // Show the screenshot
+                } else {
+                    screenshotImg.style.display = 'none';  // Hide the screenshot if not scammy
+                }
+            } else {
+                resultDiv.innerHTML = `<strong>Error:</strong> ${result.error}`;
+            }
+        });
+
+
+    </script>
+    
+
+</body>
+</html>
