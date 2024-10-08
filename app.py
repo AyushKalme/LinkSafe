@@ -1,132 +1,88 @@
-from flask import Flask, request, jsonify, render_template, url_for
-from src.model import load_model, predict_single_url
+from flask import Flask, render_template, request, jsonify
+from werkzeug.utils import secure_filename
+import os, re
+import pandas as pd
+from src.model import load_model, predict_single_url, predict_multiple_urls  # Import your prediction functions
 from src.sreenshot import screehotter
 
-# Initialize Flask app
 app = Flask(__name__)
 
-# Load the trained Random Forest model and scaler
+# Set up the folder for storing uploaded files
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 model, scaler = load_model()
 
 @app.route('/')
-def index():
-    return render_template('index.html')  # Serve the HTML page
+def home():
+    return render_template('index.html')
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    try:
-        data = request.get_json()
-        url = data.get('url')
-        
-        if not url:
-            return jsonify({"error": "No URL provided"}), 400
+    url_type = request.form.get('url_type')
+    
+    if url_type == 'single':
+        url = request.form.get('url')
 
-        # Make prediction using the updated predict_url function
-        result, scammy_probability = predict_single_url(url, model, scaler)
-        
-        screenshot_path = None
+        #clean url
+        url = re.sub(r'^https?:\/\/(www\.)?', '', url.lower())
+        url = re.sub(r'(www\.)?', '', url.lower())
+
+        result, proba = predict_single_url(url,model,scaler)
+        screenshotpath = None
         if result == "Scammy":
-            screenshot_path = screehotter(url)  # Take a screenshot if classified as scammy
-            screenshot_url = url_for('static', filename=f'screenshots/scammy_site.png')
+            screenshotpath = screehotter(url)
 
-        return jsonify({
-            "url": url,
-            "result": result,
-            "scammy_probability": scammy_probability,
-            "screenshot_path": screenshot_path  # Return the screenshot path if available
-        })
-    # return jsonify({"url": url, "result": result, "scammy_probability": scammy_probability})
-    except Exception as e:
-        app.logger.error(f"Error in /predict: {e}")
-        return jsonify({'error': str(e)}), 500
+        if result:
+            return jsonify({
+                "url": url,
+                "result": result,
+                "scammy_probability": proba,
+                "screenshot_path": screenshotpath
+            })
+        else:
+            return jsonify({"error": "Prediction failed"}), 500
+    
+    elif url_type == 'multiple':
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        
+        if file:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            # Read the CSV file and get URLs
+            try:
+                df = pd.read_csv(filepath)
+                df = df['Domain']
+                df = pd.DataFrame(df)
+                df.rename(columns = {"Domain" : "url"}, inplace=True)
+
+                if 'url' not in df.columns:
+                    return jsonify({"error": "CSV file must contain a 'url' column"}), 400
+                
+                # urls = df['url'].tolist()
+                results = predict_multiple_urls(df,model,scaler)
+                formatted_results = [{
+                    "url": res.get("url"),
+                    "result": res.get("result"),
+                    "scammy_probability": res.get("scammy_probability"),
+                    "screenshot_path": res.get("screenshot_path")
+                } for res in results]
+
+                return jsonify({"results": formatted_results})
+            
+            except Exception as e:
+                return jsonify({"error": str(e)}), 400
+    
+    return jsonify({"error": "Invalid URL input"}), 400
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import os
-# import re
-# from flask import Flask, render_template, request, jsonify
-# from joblib import load
-# from src.data_processing import extract_features
-# import pandas as pd
-
-# # List of suspicious keywords
-# SUSPICIOUS_KEYWORDS = [
-#     "money", "win", "free", "offer", "cash", "prize", "bonus", "credit", "loan", "earn", "income", "profits", "download",
-#     "investment", "bank", "refinance", "withdraw", "transfer", "deposit", "payment", "wallet", "bitcoin",
-#     "crypto", "forex", "payout", "reward", "check", "funds", "lottery", "jackpot", "porn", "adult", "xxx", "sex"
-# ]
-
-# # Function to check for suspicious words in a URL
-# def flag_suspicious_url(url):
-#     """Check if a URL contains any suspicious words."""
-#     url_cleaned = re.sub(r'^https?:\/\/(www\.)?', '', url.lower())  # Clean the URL
-#     return any(keyword in url_cleaned for keyword in SUSPICIOUS_KEYWORDS)
-
-# # Load the Random Forest model and scaler
-# MODEL_PATH = os.path.join('models', 'rf_model.joblib')
-# SCALER_PATH = os.path.join('models', 'scaler.joblib')
-
-# rf_model = load(MODEL_PATH)
-# scaler = load(SCALER_PATH)
-
-# app = Flask(__name__)
-
-# # Serve the HTML front-end
-# @app.route('/')
-# def index():
-#     return render_template('index.html')  # Serve the front-end from templates folder
-
-# # Prediction API endpoint
-# @app.route('/predict', methods=['POST'])
-# def predict():
-#     data = request.get_json()
-#     url = data.get('url')
-
-#     if not url:
-#         return jsonify({"error": "No URL provided"}), 400
-    
-#     df = pd.DataFrame([{'url': url}])
-
-#     # Step 1: Check for suspicious words
-#     if flag_suspicious_url(url):
-#         return jsonify({"result": "Scammy (Keyword Match)", "scammy_probability": 1.0})
-
-#     # Step 2: If no suspicious words, proceed with model prediction
-#     # Extract features
-#     df = extract_features([url])  # Assuming extract_features takes a list of URLs and returns a DataFrame
-    
-#     # Scale features
-#     features_to_scale = ['num_dots', 'domain_length', 'num_subdomains']
-#     df[features_to_scale] = scaler.transform(df[features_to_scale])
-    
-#     # Make predictions
-#     proba = rf_model.predict_proba(df)[:, 1]
-#     threshold = 0.25  # Adjust your threshold if necessary
-#     prediction = 'Scammy' if proba > threshold else 'Legitimate'
-    
-#     return jsonify({"result": prediction, "scammy_probability": float(proba)})
-
-# if __name__ == '__main__':
-#     app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True)

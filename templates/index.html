@@ -3,35 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkSafe - URL Detection</title>
+    <title>LinkSafe - URL Analysis</title>
     <style>
+        /* Styling for the form and layout */
         body {
             font-family: Arial, sans-serif;
-            margin: 50px;
-            padding: 0;
-            background-color: #f4f4f4;
-        }
-        h1 {
-            text-align: center;
+            background-color: #f8f9fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
         .container {
-            width: 100%;
             max-width: 600px;
-            margin: 0 auto;
-            background-color: white;
+            background: white;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
-        input[type="text"], button {
+        input, textarea, button, select {
             width: 100%;
             padding: 10px;
             margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
         }
         button {
             background-color: #28a745;
             color: white;
-            border: none;
             cursor: pointer;
         }
         button:hover {
@@ -39,67 +38,108 @@
         }
         #result {
             margin-top: 20px;
-            padding: 10px;
-            border-radius: 4px;
-            background-color: #f0f0f0;
+        }
+        .screenshot {
+            width: 100%;
+            height: auto;
         }
     </style>
 </head>
 <body>
-
-    <h1>LinkSafe - Invalid URL Detection</h1>
-
     <div class="container">
+        <h2>LinkSafe - URL Analysis</h2>
         <form id="urlForm">
-            <label for="url">Enter a URL to check:</label>
-            <input type="text" id="url" name="url" placeholder="Enter URL..." required>
-            <button type="submit">Check URL</button>
+            <label for="urlType">Choose analysis type:</label>
+            <select id="urlType">
+                <option value="single">Single URL</option>
+                <option value="multiple">Multiple URLs (CSV)</option>
+            </select>
+            <div id="single-url-input">
+                <label for="url">Enter URL to check:</label>
+                <input type="text" id="url" name="url" placeholder="Enter URL..." />
+            </div>
+            <div id="multiple-url-input" style="display: none;">
+                <label for="file">Upload CSV file:</label>
+                <input type="file" id="file" name="file" accept=".csv" />
+            </div>
+            <button type="submit">Analyze</button>
         </form>
-
         <div id="result"></div>
-        <img id="screenshot" src="" alt="Screenshot will appear here" style="display: none; width: 400px; height: auto;">
     </div>
 
     <script>
-
         const form = document.getElementById('urlForm');
         const resultDiv = document.getElementById('result');
-        const screenshotImg = document.getElementById('screenshot');
+        const urlType = document.getElementById('urlType');
+        const singleUrlInput = document.getElementById('single-url-input');
+        const multipleUrlInput = document.getElementById('multiple-url-input');
 
-        form.addEventListener('submit', async function(event) {
-            event.preventDefault();
-
-            const url = document.getElementById('url').value;
-
-            // Send the URL to Flask backend
-            const response = await fetch('/predict', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: url })
-            });
-
-            const result = await response.json();
-
-            // Display the result
-            if (response.ok) {
-                resultDiv.innerHTML = `<strong>Result:</strong> ${result.result} <br> <strong>Scammy Probability:</strong> ${result.scammy_probability.toFixed(2)}`;
-                
-                if (result.result === 'Scammy' && result.screenshot_path) {
-                    screenshotImg.src = result.screenshot_path;  // Set the screenshot image source
-                    screenshotImg.style.display = 'block';  // Show the screenshot
-                } else {
-                    screenshotImg.style.display = 'none';  // Hide the screenshot if not scammy
-                }
+        // Toggle inputs based on analysis type selection
+        urlType.addEventListener('change', function() {
+            if (urlType.value === 'single') {
+                singleUrlInput.style.display = 'block';
+                multipleUrlInput.style.display = 'none';
             } else {
-                resultDiv.innerHTML = `<strong>Error:</strong> ${result.error}`;
+                singleUrlInput.style.display = 'none';
+                multipleUrlInput.style.display = 'block';
             }
         });
 
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const formData = new FormData();
 
+            if (urlType.value === 'single') {
+                const url = document.getElementById('url').value;
+                formData.append('url_type', 'single');
+                formData.append('url', url);
+            } else {
+                const fileInput = document.getElementById('file');
+                if (fileInput.files.length > 0) {
+                    const file = fileInput.files[0];
+                    formData.append('url_type', 'multiple');
+                    formData.append('file', file);
+                } else {
+                    resultDiv.innerHTML = '<strong>Error:</strong> Please select a file.';
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    if (urlType.value === 'single') {
+                        resultDiv.innerHTML = `
+                            <strong>Result:</strong> ${result.result}<br>
+                            <strong>Scammy Probability:</strong> ${result.scammy_probability}<br>
+                            ${result.screenshot_path ? `<img src="${result.screenshot_path}" class="screenshot" alt="Screenshot of the site">` : ''}
+                        `;
+                    } else {
+                        resultDiv.innerHTML = '<strong>Results:</strong><ul>';
+                        result.results.forEach((res, index) => {
+                            resultDiv.innerHTML += `
+                                <li>
+                                    <strong>URL ${index + 1}:</strong> ${res.url}<br>
+                                    <strong>Result:</strong> ${res.result}<br>
+                                    <strong>Scammy Probability:</strong> ${res.scammy_probability}<br>
+                                    ${res.screenshot_path ? `<img src="${res.screenshot_path}" class="screenshot" alt="Screenshot of the site ${index + 1}">` : ''}
+                                </li>
+                            `;
+                        });
+                        resultDiv.innerHTML += '</ul>';
+                    }
+                } else {
+                    resultDiv.innerHTML = `<strong>Error:</strong> ${result.error}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+            }
+        });
     </script>
-    
-
 </body>
 </html>
